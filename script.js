@@ -125,7 +125,7 @@ function moveMouse(x, y) {
 function consume() {
     for (let j=0; j<30; j++) {
         let {rope} = state;
-        if (rope.length <= 300) {
+        if (rope.length <= 1000) {
             return;
         }
         let lowest = 0;
@@ -236,6 +236,11 @@ function draw() {
 
     ctx.fillStyle = 'white';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.font = "20px Arial";
+    ctx.fillStyle = "black";
+    ctx.fillText("Goal: Wrap string so that removing either peg allows string to fall.", 0, 560);
+    ctx.fillText("Click: Draw string, remove peg. Space: Reset. Shift: Tighten. 2/3: Choose level.", 0, 590);
 
     ctx.fillStyle = 'blue';
     for (let i=0; i<pegs.length; i++){
