@@ -8,11 +8,12 @@ var transform = {
     sy: 1,
 };
 
+var shiftOn = false;
 var mousePos = {x: 0, y: 0}
 
 var state = {
-    oldRope: [{x: 10, y: 10}, {x: 20, y: 20}, {x: 30, y: 30}],
-    rope: [{x: 10, y: 10}, {x: 20, y: 20}, {x: 30, y: 30}],
+    oldRope: [{x: 0, y: 600}, {x: 0, y: 600}, {x: 0, y: 600}],
+    rope: [{x: 0, y: 600}, {x: 0, y: 600}, {x: 0, y: 600}],
     pegs: [{x: 200, y: 200}, {x: 600, y: 200}],
     mode: INIT,
 };
@@ -25,12 +26,21 @@ var PULL = 2;
 var DEPEG = 3;
 var FALL = 4;
 
-function pull() {
-    state = {...original, mode: PULL};
+function pull(x, y) {
+    state = {...original, mode: PULL, rope: [{x, y}, {x, y}]};
+}
+
+function twoPegs() {
+    let pegs = [{x: 200, y: 200}, {x: 600, y: 200}];
+    state = reset = original = {...original, pegs};
+}
+
+function threePegs() {
+    let pegs = [{x: 150, y: 200}, {x: 400, y: 250}, {x: 650, y: 200}];
+    state = reset = original = {...original, pegs};
 }
 
 function stopPull() {
-    state = {...state, mode: DEPEG};
     let {rope} = state;
     let x = rope[0].x;
     let y = rope[0].y;
@@ -48,16 +58,17 @@ function stopPull() {
         oldRope.push({x: last.x+i*dx/n, y: last.y+i*dy/n});
         state = {...state, oldRope, rope: newRope};
     }
+    state = {...state, mode: FALL};
+    reset = state;
 }
 
 function space() {
     if (state.mode === PULL) {
         stopPull();
-    } else if (state.mode === FALL) {
+    } else if (state.mode > PULL) {
         state = reset;
     } else {
-        reset = state;
-        state = {...state, mode: FALL};
+        stopPull();
     }
 }
 
@@ -65,6 +76,7 @@ function clickPeg(i) {
     if (state.mode === PULL) {
         return
     } else {
+        reset = state;
         let {pegs} = state;
         let newPegs = pegs.slice();
         newPegs.splice(i, 1);
@@ -110,6 +122,26 @@ function moveMouse(x, y) {
     }
 }
 
+function consume() {
+    for (let j=0; j<30; j++) {
+        let {rope} = state;
+        if (rope.length <= 300) {
+            return;
+        }
+        let lowest = 0;
+        for (let i=0; i<rope.length; i++) {
+            if (rope[i].y > rope[lowest].y) {
+                lowest = i;
+            }
+        }
+        let newRope = rope.slice();
+        newRope.splice(lowest, 1);
+        let oldRope = state.oldRope.slice();
+        oldRope.splice(lowest, 1);
+        state = {...state, rope: newRope, oldRope};
+    }
+}
+
 window.addEventListener('load', main);
 
 function onmousemove(e, cont) {
@@ -126,6 +158,18 @@ function onmousemove(e, cont) {
 function onkeyup(e) {
     if (e.keyCode === 32) {
         space();
+    } else if (e.keyCode === 50) {
+        twoPegs();
+    } else if (e.keyCode === 51) {
+        threePegs();
+    } else if (e.keyCode === 16) {
+        shiftOn = false;
+    }
+}
+
+function onkeydown(e) {
+    if (e.keyCode === 16) {
+        shiftOn = true;
     }
 }
 
@@ -137,6 +181,7 @@ function main() {
     window.addEventListener('mousemove', e => onmousemove(e, moveMouse));
     window.addEventListener('click', e => onmousemove(e, clickMouse));
     window.addEventListener('keyup', onkeyup);
+    window.addEventListener('keydown', onkeydown);
     window.addEventListener('resize', resize);
 
     resize();
@@ -199,19 +244,24 @@ function draw() {
         ctx.fill();
     }
 
-    ctx.strokeStyle = 'red';
-    ctx.lineWidth = 4;
-    ctx.beginPath();
-    for (let i=0; i < rope.length; i++) {
-        ctx.lineTo(rope[i].x, rope[i].y);
+    if (state.mode !== INIT) {
+        ctx.strokeStyle = 'red';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        for (let i=0; i < rope.length; i++) {
+            ctx.lineTo(rope[i].x, rope[i].y);
+        }
+        if (state.mode > FALL) {
+            ctx.closePath();
+        }
+        ctx.stroke();
     }
-    if (state.mode > FALL) {
-        ctx.closePath();
-    }
-    ctx.stroke();
 }
 
 function simtick() {
+    if (shiftOn) {
+        consume();
+    }
     integrate();
     for (let i=0; i<iters; i++) {
         constrain();
