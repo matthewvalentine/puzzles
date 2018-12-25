@@ -8,24 +8,147 @@ var transform = {
     sy: 1,
 };
 
-var objs = [{
-    x: 100,
-    y: 100,
-    draw: (obj, ctx) => {
-        console.log('WOOP', obj.x, obj.y);
-        ctx.fillStyle = 'red';
-        ctx.fillRect(obj.x - 50, obj.y - 50, 100, 100);
+var mousePos = {x: 0, y: 0}
+
+var state = {
+    oldRope: [{x: 10, y: 10}, {x: 20, y: 20}, {x: 30, y: 30}],
+    rope: [{x: 10, y: 10}, {x: 20, y: 20}, {x: 30, y: 30}],
+    pegs: [{x: 200, y: 200}, {x: 600, y: 200}],
+    mode: INIT,
+};
+
+var original = state;
+var reset = original;
+
+var INIT = 1;
+var PULL = 2;
+var DEPEG = 3;
+var FALL = 4;
+
+function pull() {
+    state = {...original, mode: PULL};
+}
+
+function stopPull() {
+    state = {...state, mode: DEPEG};
+    let {rope} = state;
+    let x = rope[0].x;
+    let y = rope[0].y;
+    let last = rope[rope.length-1];
+    let dx = x - last.x;
+    let dy = y - last.y;
+    let n = ~~(Math.sqrt(dx*dx + dy*dy)/ropesize);
+    if (n < 1) {
+        return;
     }
-}];
+    let newRope = rope.slice();
+    let oldRope = state.oldRope.slice();
+    for (let i=0; i<n; i++) {
+        newRope.push({x: last.x+i*dx/n, y: last.y+i*dy/n});
+        oldRope.push({x: last.x+i*dx/n, y: last.y+i*dy/n});
+        state = {...state, oldRope, rope: newRope};
+    }
+}
+
+function space() {
+    if (state.mode === PULL) {
+        stopPull();
+    } else if (state.mode === FALL) {
+        state = reset;
+    } else {
+        reset = state;
+        state = {...state, mode: FALL};
+    }
+}
+
+function clickPeg(i) {
+    if (state.mode === PULL) {
+        return
+    } else {
+        let {pegs} = state;
+        let newPegs = pegs.slice();
+        newPegs.splice(i, 1);
+        state = {...state, pegs: newPegs};
+    }
+}
+
+function clickMouse(x, y) {
+    let pegs = state.pegs;
+    for (let i =0; i < pegs.length; i++) {
+        let dx = pegs[i].x - x;
+        let dy = pegs[i].y - y;
+        if (dx*dx + dy*dy < pegsize2) {
+            clickPeg(i);
+            return;
+        }
+    }
+    if (state.mode === PULL) {
+        stopPull();
+    } else {
+        pull(x, y);
+    }
+}
+
+function moveMouse(x, y) {
+    let {mode, rope} = state;
+    if (mode !== PULL) {
+        return;
+    }
+    let last = rope[rope.length-1];
+    let dx = x - last.x;
+    let dy = y - last.y;
+    let n = ~~(Math.sqrt(dx*dx + dy*dy)/ropesize);
+    if (n < 1) {
+        return;
+    }
+    let newRope = rope.slice();
+    let oldRope = state.oldRope.slice();
+    for (let i=0; i <n; i++) {
+        newRope.push({x: last.x+i*dx/n, y: last.y+i*dy/n});
+        oldRope.push({x: last.x+i*dx/n, y: last.y+i*dy/n});
+        state = {...state, oldRope, rope: newRope};
+    }
+}
+
+window.addEventListener('load', main);
+
+function onmousemove(e, cont) {
+    let rect = canvas.getBoundingClientRect();
+    let sx = canvas.width / rect.width;
+    let sy = canvas.height / rect.height;
+
+    let mx = ((e.clientX - rect.left) * sx - transform.x) / transform.sx;
+    let my = ((e.clientY - rect.top) * sy - transform.y) / transform.sy;
+
+    cont(mx, my);
+}
+
+function onkeyup(e) {
+    if (e.keyCode === 32) {
+        space();
+    }
+}
 
 function main() {
     canvas = document.getElementById('root');
     ctx = canvas.getContext('2d');
     ctx.save();
 
-    canvas.addEventListener('mousemove', mouse);
+    window.addEventListener('mousemove', e => onmousemove(e, moveMouse));
+    window.addEventListener('click', e => onmousemove(e, clickMouse));
+    window.addEventListener('keyup', onkeyup);
+    window.addEventListener('resize', resize);
 
     resize();
+    requestAnimationFrame(loop);
+}
+
+function loop() {
+    requestAnimationFrame(loop);
+    if (state.mode > PULL) {
+        simtick();
+    }
+    draw();
 }
 
 function resize() {
@@ -64,28 +187,126 @@ function resize() {
 }
 
 function draw() {
+    let {pegs, rope} = state;
+
     ctx.fillStyle = 'white';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    for (let i=0; i < objs.length; i++) {
-        console.log("Drawing", objs[i].x, objs[i].y);
-        objs[i].draw(objs[i], ctx, canvas);
+    ctx.fillStyle = 'blue';
+    for (let i=0; i<pegs.length; i++){
+        ctx.beginPath();
+        ctx.arc(pegs[i].x, pegs[i].y, pegsize, 0, 2*Math.PI);
+        ctx.fill();
+    }
+
+    ctx.strokeStyle = 'red';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    for (let i=0; i < rope.length; i++) {
+        ctx.lineTo(rope[i].x, rope[i].y);
+    }
+    if (state.mode > FALL) {
+        ctx.closePath();
+    }
+    ctx.stroke();
+}
+
+function simtick() {
+    integrate();
+    for (let i=0; i<iters; i++) {
+        constrain();
     }
 }
 
-function mouse(e) {
-    let rect = canvas.getBoundingClientRect();
-    let sx = canvas.width / rect.width;
-    let sy = canvas.height / rect.height;
-
-    let mx = ((e.clientX - rect.left) * sx - transform.x) / transform.sx;
-    let my = ((e.clientY - rect.top) * sy - transform.y) / transform.sy;
-
-    objs[0].x = mx;
-    objs[0].y = my;
-
-    draw();
+function update(c, o) {
+    if (state.mode > PULL) {
+        return {
+            x: c.x + keep*(c.x - o.x),
+            y: c.y + keep*(c.y - o.y) + grav,
+        };
+    } else {
+        return {
+            x: c.x + keep*(c.x - o.x),
+            y: c.y + keep*(c.y - o.y) + lowgrav,
+        };
+    }
 }
 
-window.addEventListener('load', main);
-window.addEventListener('resize', resize);
+function integrate() {
+    let {rope, oldRope} = state;
+    let newRope = [];
+    let i = 0;
+    if (state.mode <= FALL) {
+        newRope.push({...rope[0]});
+        i = 1;
+    }
+    for (; i < rope.length; i++) {
+        newRope.push(update(rope[i], oldRope[i]));
+    }
+    state = {
+        ...state,
+        oldRope: rope,
+        rope: newRope,
+    };
+}
+
+function ropenodes(a, b) {
+    let d2 = dist2(a, b);
+    if (d2 <= ropesize2) {
+        return;
+    }
+    let d = Math.sqrt(d2);
+    let diff = d - ropesize;
+    let dx = a.x - b.x;
+    let dy = a.y - b.y;
+    let ddx = 0.5 * dx * diff / d;
+    let ddy = 0.5 * dy * diff / d;
+    a.x -= ddx;
+    a.y -= ddy;
+    b.x += ddx;
+    b.y += ddy;
+}
+
+function constrain() {
+    let {rope, pegs} = state;
+
+    let end = state.mode > PULL ? 0 : 1;
+    for (let i=rope.length-1; i > end; i--) {
+        ropenodes(rope[i], rope[i-1]);
+    }
+    if (state.mode > PULL) {
+        ropenodes(rope[0], rope[rope.length-1]);
+    }
+
+    for (let i=0; i < rope.length; i++) {
+        for (let j=0; j < pegs.length; j++) {
+            let d2 = dist2(rope[i], pegs[j]);
+            if (d2 >= pegsize2) {
+                continue;
+            }
+            dx = rope[i].x - pegs[j].x;
+            dy = rope[i].y - pegs[j].y;
+            d = Math.sqrt(d2);
+            rope[i].x = pegs[j].x + pegsize * dx / d;
+            rope[i].y = pegs[j].y + pegsize * dy / d;
+        }
+    }
+}
+
+function dist2(a, b) {
+    let x = a.x - b.x;
+    let y = a.y - b.y;
+    return x*x + y*y;
+}
+
+var iters = 100;
+var grav = 0.3;
+var lowgrav = 0;
+var keep = 0.99;
+
+var pegsize = 70;
+var pegsize2 = pegsize * pegsize;
+
+var ropesize = 1;
+var ropesize2 = ropesize * ropesize;
+
